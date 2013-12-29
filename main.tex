@@ -1,0 +1,141 @@
+\documentclass[hyperref={colorlinks=true,urlcolor=blue}]{beamer}
+
+\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage[english]{babel}
+\usepackage[babel=true]{microtype}
+\usepackage{color}
+\usepackage{listings}
+
+\definecolor{verbgray}{gray}{0.9}
+
+\lstnewenvironment{code}{%
+  \lstset{backgroundcolor=\color{verbgray},
+  frame=single,
+  framerule=0pt,
+  basicstyle=\ttfamily,
+  columns=fullflexible}}{}
+
+\title{A brief introduction to\\ scalaz-stream}
+\author{Frank S. Thomas}
+\date{September 18, 2013}
+
+\begin{document}
+  \frame{\titlepage}
+
+\begin{frame}{What is it?}
+  scalaz-stream is
+  \begin{itemize}
+    \item a library for stream processing and incremental I/O
+    \item resource safe
+    \item composable
+    %\item expressive
+    \item functional: stream transformations are pure values
+  \end{itemize}
+\end{frame}
+ 
+\begin{frame}[fragile]{Imperative I/O}
+  \begin{code}
+def linesGt40k1(filename: String): Boolean = {
+  val src = scala.io.Source.fromFile(filename)
+  try {
+    var count = 0
+    val lines: Iterator[String] = src.getLines
+    while (count <= 40000 && lines.hasNext) {
+      lines.next
+      count += 1
+    }
+    count > 40000
+  }
+  finally src.close
+}      
+  \end{code}
+\end{frame}
+
+\begin{frame}[fragile]{I/0 with \texttt{scalaz-stream}}
+  \begin{code}
+def linesGt40k2(filename: String): Boolean =
+  scalaz.stream.io.linesR(filename).
+    drop(40000).
+    once.
+    runLast.
+    run.
+    nonEmpty
+  \end{code}
+\end{frame}
+
+\begin{frame}[fragile]{Stream transformations with \texttt{Process}}
+  \begin{code}
+trait Process[I,O]
+
+case class Emit[I,O](
+    head: Seq[O],
+    tail: Process[I,O] = Halt[I,O]())
+  extends Process[I,O]
+
+case class Await[I,O](
+    recv: I => Process[I,O],
+    finalizer: Process[I,O] = Halt[I,O]())
+  extends Process[I,O]
+
+case class Halt[I,O]() extends Process[I,O]
+  \end{code}
+  
+  \begin{itemize}
+   \item \texttt{Process} is a state machine with three possible states
+   \item these must be interpreted by a driver for effects to occur
+  \end{itemize}  
+\end{frame}
+
+\begin{frame}{Combinators}
+  Modify and compose processes:
+  \begin{itemize}
+    \item \texttt{def map[O2](f: O => O2): Process[I,O2]}
+    \item \texttt{def flatMap[O2](f: O => Process[I,O2]): Process[I,O2]}
+    \item \texttt{def append(p: => Process[I,O]): Process[I,O]}
+    \item \texttt{def filter(f: I => Boolean): Process[I,I]}
+    \item \texttt{def take(n: Int): Process[I,I]}
+    \item \texttt{def takeWhile(f: I => Boolean): Process[I,I]}
+    \item ... and many more
+  \end{itemize}
+  
+  Feed the output of \texttt{this} to the input of \texttt{p2}: 
+  \begin{itemize}
+    \item \texttt{def pipe[O2](p2: Process[O,O2]): Process[I,O2]}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Another Example}
+  \begin{code}
+import scalaz.stream._
+import scalaz.concurrent.Task
+
+val converter: Task[Unit] =
+  io.linesR("testdata/fahrenheit.txt").
+     filter(s =>
+       !s.trim.isEmpty && !s.startsWith("//")).
+     map(line =>
+       fahrenheitToCelsius(line.toDouble).toString).
+     intersperse("\n").
+     pipe(process1.utf8Encode).
+     to(io.fileChunkW("testdata/celsius.txt")).
+     run
+
+val u: Unit = converter.run 
+  \end{code}
+\end{frame}
+
+\begin{frame}{References}
+  \begin{itemize}
+   \item \url{https://github.com/scalaz/scalaz-stream}
+   \item Chapter 15 of Functional Programming in Scala
+     \url{http://manning.com/bjarnason/}
+   \item Advanced Stream Processing in Scala
+     \url{http://www.youtube.com/watch?v=8fC2V9HX_m8}
+   %\item \url{http://stackoverflow.com/questions/tagged/scalaz-stream}
+  \end{itemize}
+\end{frame}
+
+\end{document}
